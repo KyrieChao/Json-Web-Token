@@ -1,6 +1,6 @@
 package key_minter.config;
 
-import key_minter.model.dto.Algorithm;
+import key_minter.model.Algorithm;
 
 public class KeyMinterBuilder {
     private Algorithm algorithm;
@@ -24,4 +24,3 @@ public class KeyMinterBuilder {
         return this;
     }
 }
-

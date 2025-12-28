@@ -1,12 +1,13 @@
 package key_minter.auth.crypto;
 
-import key_minter.model.dto.JwtProperties;
+import key_minter.config.SecretDirProvider;
+import key_minter.model.JwtProperties;
 import key_minter.auth.core.AbstractJwt;
 import key_minter.auth.core.Jwt;
-import key_minter.model.dto.Algorithm;
-import key_minter.model.dto.KeyVersion;
+import key_minter.model.Algorithm;
+import key_minter.model.KeyVersion;
 import key_minter.security.SecureByteArray;
-import key_minter.util.AtomicKeyRotation;
+import key_minter.security.AtomicKeyRotation;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtBuilder;
 import io.jsonwebtoken.JwtException;
@@ -33,17 +34,19 @@ import java.util.stream.Stream;
 @Getter
 @Slf4j
 public class HmacJwt extends AbstractJwt {
-    private static final Path DEFAULT_SECRET_DIR = Paths.get(System.getProperty("user.home"), ".chao", "hmac-keys");
+    private static Path getDefaultHmacDir() {
+        return SecretDirProvider.getDefaultBaseDir().resolve("hmac-keys");
+    }
     private final Map<String, SecureByteArray> versionSecrets = new ConcurrentHashMap<>();
     private static final String KEY_VERSION_PREFIX = "hmac-v";
     private SecureByteArray currentSecret;
 
     public HmacJwt() {
-        this(DEFAULT_SECRET_DIR);
+        this(getDefaultHmacDir());
     }
 
     public HmacJwt(String directory) {
-        this(StringUtils.isBlank(directory) ? DEFAULT_SECRET_DIR : Paths.get(directory));
+        this(StringUtils.isBlank(directory) ? getDefaultHmacDir() : Paths.get(directory));
     }
 
     public HmacJwt(Path secretDir) {
@@ -53,7 +56,7 @@ public class HmacJwt extends AbstractJwt {
     public HmacJwt(Path secretDir, boolean enableRotation) {
         // 修复目录遍历漏洞 - 标准化路径
         if (secretDir == null) {
-            secretDir = DEFAULT_SECRET_DIR;
+            secretDir = getDefaultHmacDir();
         } else {
             // 规范化路径，防止../../../攻击
             secretDir = secretDir.normalize();

@@ -1,7 +1,7 @@
 package key_minter.config;
 
 import key_minter.auth.core.Jwt;
-import key_minter.model.dto.Algorithm;
+import key_minter.model.Algorithm;
 import key_minter.auth.factory.JwtFactory;
 import key_minter.util.KeyMinter;
 import org.springframework.beans.factory.ObjectProvider;
@@ -12,9 +12,10 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 
 import java.util.List;
+import java.nio.file.Paths;
 
 @AutoConfiguration
-@EnableConfigurationProperties(KeyMinterProperties.class)
+@EnableConfigurationProperties({KeyMinterProperties.class, CleanArchProperties.class})
 @ConditionalOnClass({JwtFactory.class, Algorithm.class})
 public class KeyMinterAutoConfiguration {
 
@@ -25,9 +26,12 @@ public class KeyMinterAutoConfiguration {
     }
 
     @Bean
-    public Jwt keyMinterJwt(KeyMinterProperties properties, KeyMinterOverrides overrides,
-                            ObjectProvider<List<KeyMinterConfigurer>> configurersProvider) {
-
+    public Jwt keyMinterJwt(KeyMinterProperties properties, KeyMinterOverrides overrides,ObjectProvider<List<KeyMinterConfigurer>> configurersProvider) {
+        if (properties.getBaseDir() != null && !properties.getBaseDir().isBlank()) {
+            SecretDirProvider.setDefaultBaseDir(Paths.get(properties.getBaseDir()));
+        } else if (properties.getKeyDir() != null && !properties.getKeyDir().isBlank()) {
+            SecretDirProvider.setDefaultBaseDir(Paths.get(properties.getKeyDir()));
+        }
         KeyMinterBuilder builder = new KeyMinterBuilder()
                 .setAlgorithm(overrides.algorithm() != null ? overrides.algorithm() : properties.getAlgorithm())
                 .setPreferredKeyId(overrides.preferredKeyId() != null ? overrides.preferredKeyId() : properties.getPreferredKeyId());

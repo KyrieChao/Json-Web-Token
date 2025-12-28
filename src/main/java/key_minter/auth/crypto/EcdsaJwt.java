@@ -1,11 +1,12 @@
 package key_minter.auth.crypto;
 
-import key_minter.model.dto.JwtProperties;
+import key_minter.config.SecretDirProvider;
+import key_minter.model.JwtProperties;
 import key_minter.auth.core.AbstractJwt;
 import key_minter.auth.core.Jwt;
-import key_minter.model.dto.Algorithm;
-import key_minter.model.dto.KeyVersion;
-import key_minter.util.AtomicKeyRotation;
+import key_minter.model.Algorithm;
+import key_minter.model.KeyVersion;
+import key_minter.security.AtomicKeyRotation;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtBuilder;
 import io.jsonwebtoken.JwtException;
@@ -35,7 +36,10 @@ import java.util.stream.Stream;
 @Slf4j
 @Getter
 public class EcdsaJwt extends AbstractJwt {
-    private static final Path DEFAULT_KEY_DIR = Paths.get(System.getProperty("user.home"), ".chao", "ec-keys");
+    private static Path getDefaultEcDir() {
+        return SecretDirProvider.getDefaultBaseDir().resolve("ec-keys");
+    }
+
     private final Map<String, KeyPair> versionKeyPairs = new ConcurrentHashMap<>();
     private final Map<String, Algorithm> keyIdToAlgorithm = new ConcurrentHashMap<>();
     private static final Map<Algorithm, AlgorithmConfig> ALGORITHM_CONFIGS =
@@ -47,7 +51,7 @@ public class EcdsaJwt extends AbstractJwt {
     private static final String KEY_VERSION_PREFIX = "es";
 
     public EcdsaJwt() {
-        this(DEFAULT_KEY_DIR);
+        this(getDefaultEcDir());
     }
 
     public EcdsaJwt(Path keyDir) {
@@ -55,12 +59,12 @@ public class EcdsaJwt extends AbstractJwt {
     }
 
     public EcdsaJwt(String directory) {
-        this(StringUtils.isBlank(directory) ? DEFAULT_KEY_DIR : Paths.get(directory), true);
+        this(StringUtils.isBlank(directory) ? getDefaultEcDir() : Paths.get(directory), true);
     }
 
     public EcdsaJwt(Path keyDir, boolean enableRotation) {
         if (keyDir == null) {
-            keyDir = DEFAULT_KEY_DIR;
+            keyDir = getDefaultEcDir();
         } else {
             // 规范化路径，防止../../../攻击
             keyDir = keyDir.normalize();

@@ -1,4 +1,4 @@
-package key_minter.model.dto;
+package key_minter.model;
 
 import lombok.Data;
 

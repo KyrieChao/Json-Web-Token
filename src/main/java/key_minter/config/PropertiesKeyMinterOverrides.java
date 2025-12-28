@@ -1,6 +1,6 @@
 package key_minter.config;
 
-import key_minter.model.dto.Algorithm;
+import key_minter.model.Algorithm;
 
 public class PropertiesKeyMinterOverrides implements KeyMinterOverrides {
     private final KeyMinterProperties properties;
@@ -19,4 +19,3 @@ public class PropertiesKeyMinterOverrides implements KeyMinterOverrides {
         return properties.getPreferredKeyId();
     }
 }
-

@@ -1,19 +1,21 @@
 package key_minter.auth.core;
 
-import key_minter.model.dto.JwtProperties;
-import key_minter.model.dto.Algorithm;
-import key_minter.model.dto.KeyVersion;
+import key_minter.model.JwtProperties;
+import key_minter.model.Algorithm;
+import key_minter.model.KeyVersion;
 import io.jsonwebtoken.Claims;
 
 import java.nio.file.Path;
-import java.nio.file.Paths;
+import key_minter.config.SecretDirProvider;
 import java.security.PublicKey;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
 public interface Jwt {
-    Path DEFAULT_SECRET_DIR = Paths.get(System.getProperty("user.home"), ".chao");
+    default Path getDefaultSecretDir() {
+        return SecretDirProvider.getDefaultBaseDir();
+    }
 
     // 核心JWT操作 - 移除重复的 generateJwt 方法
     String generateToken(JwtProperties properties, Map<String, Object> customClaims, Algorithm algorithm);
@@ -154,7 +156,7 @@ public interface Jwt {
     }
 
     default List<KeyVersion> listAllKeys() {
-        return listAllKeys(String.valueOf(DEFAULT_SECRET_DIR));
+        return listAllKeys(String.valueOf(getDefaultSecretDir()));
     }
 
     default List<KeyVersion> listHmacKeys(String directory) {
@@ -163,7 +165,7 @@ public interface Jwt {
     }
 
     default List<KeyVersion> listHmacKeys() {
-        return listHmacKeys(String.valueOf(DEFAULT_SECRET_DIR));
+        return listHmacKeys(String.valueOf(getDefaultSecretDir()));
     }
 
     default List<KeyVersion> listECKeys(String directory) {
@@ -172,7 +174,7 @@ public interface Jwt {
     }
 
     default List<KeyVersion> listECKeys() {
-        return listECKeys(String.valueOf(DEFAULT_SECRET_DIR));
+        return listECKeys(String.valueOf(getDefaultSecretDir()));
     }
 
     default List<KeyVersion> listEDKeys(String directory) {
@@ -181,7 +183,7 @@ public interface Jwt {
     }
 
     default List<KeyVersion> listEDKeys() {
-        return listEDKeys(String.valueOf(DEFAULT_SECRET_DIR));
+        return listEDKeys(String.valueOf(getDefaultSecretDir()));
     }
 
     default List<KeyVersion> listRSAKeys(String directory) {
@@ -190,7 +192,7 @@ public interface Jwt {
     }
 
     default List<KeyVersion> listRSAKeys() {
-        return listRSAKeys(String.valueOf(DEFAULT_SECRET_DIR));
+        return listRSAKeys(String.valueOf(getDefaultSecretDir()));
     }
 
     Jwt autoLoadFirstKey(Algorithm algorithm, String preferredKeyId, boolean force);

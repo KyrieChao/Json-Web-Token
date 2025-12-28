@@ -1,8 +1,8 @@
 package key_minter.auth.core;
 
-import key_minter.model.dto.JwtProperties;
-import key_minter.model.dto.Algorithm;
-import key_minter.model.dto.KeyVersion;
+import key_minter.model.JwtProperties;
+import key_minter.model.Algorithm;
+import key_minter.model.KeyVersion;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;

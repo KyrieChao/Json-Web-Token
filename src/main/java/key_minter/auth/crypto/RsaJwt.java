@@ -1,11 +1,12 @@
 package key_minter.auth.crypto;
 
-import key_minter.model.dto.JwtProperties;
+import key_minter.config.SecretDirProvider;
+import key_minter.model.JwtProperties;
 import key_minter.auth.core.AbstractJwt;
 import key_minter.auth.core.Jwt;
-import key_minter.model.dto.Algorithm;
-import key_minter.model.dto.KeyVersion;
-import key_minter.util.AtomicKeyRotation;
+import key_minter.model.Algorithm;
+import key_minter.model.KeyVersion;
+import key_minter.security.AtomicKeyRotation;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtBuilder;
 import io.jsonwebtoken.JwtException;
@@ -32,7 +33,9 @@ import java.util.stream.Stream;
 @Slf4j
 @Getter
 public class RsaJwt extends AbstractJwt {
-    private static final Path DEFAULT_KEY_DIR = Paths.get(System.getProperty("user.home"), ".chao", "rsa-keys");
+    private static Path getDefaultRsaDir() {
+        return SecretDirProvider.getDefaultBaseDir().resolve("rsa-keys");
+    }
     private final Map<String, KeyPair> versionKeyPairs = new ConcurrentHashMap<>();
     private static final String DEFAULT_PRIVATE_KEY_FILENAME = "private.key";
     private static final String DEFAULT_PUBLIC_KEY_FILENAME = "public.key";
@@ -41,7 +44,7 @@ public class RsaJwt extends AbstractJwt {
     private KeyPair keyPair;
 
     public RsaJwt() {
-        this(DEFAULT_KEY_DIR);
+        this(getDefaultRsaDir());
     }
 
     public RsaJwt(String directory) {
@@ -54,7 +57,7 @@ public class RsaJwt extends AbstractJwt {
 
     public RsaJwt(Path directory, boolean enableRotation) {
         if (directory == null) {
-            directory = DEFAULT_KEY_DIR;
+            directory = getDefaultRsaDir();
         } else {
             // 规范化路径，防止../../../攻击
             directory = directory.normalize();

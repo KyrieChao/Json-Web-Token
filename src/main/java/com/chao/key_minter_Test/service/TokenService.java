@@ -3,9 +3,9 @@ package com.chao.key_minter_Test.service;
 import jakarta.annotation.Resource;
 import key_minter.auth.core.Jwt;
 import key_minter.auth.decoder.JwtDecoder;
-import key_minter.model.dto.Algorithm;
-import key_minter.model.dto.JwtProperties;
-import key_minter.model.dto.JwtStandardInfo;
+import key_minter.model.Algorithm;
+import key_minter.model.JwtProperties;
+import key_minter.model.JwtStandardInfo;
 import key_minter.util.KeyMinter;
 import org.springframework.stereotype.Service;
 

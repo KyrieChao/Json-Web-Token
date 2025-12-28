@@ -6,7 +6,7 @@ import key_minter.auth.crypto.EcdsaJwt;
 import key_minter.auth.crypto.EddsaJwt;
 import key_minter.auth.crypto.HmacJwt;
 import key_minter.auth.crypto.RsaJwt;
-import key_minter.model.dto.Algorithm;
+import key_minter.model.Algorithm;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -173,9 +173,10 @@ public class JwtFactory {
      * 构建缓存键
      */
     private static String buildCacheKey(Algorithm algorithm, Path keyDir, boolean enableRotation) {
-        return String.format("%s:%s:%s", algorithm.name(),
-                keyDir != null ? keyDir.toAbsolutePath().toString() : "null", enableRotation
-        );
+        String dirKey = keyDir != null
+                ? keyDir.toAbsolutePath().toString()
+                : key_minter.config.SecretDirProvider.getDefaultBaseDir().toAbsolutePath().toString();
+        return String.format("%s:%s:%s", algorithm.name(), dirKey, enableRotation);
     }
 
     /**

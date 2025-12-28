@@ -1,8 +1,8 @@
 package key_minter.auth.decoder;
 
 import key_minter.auth.core.Jwt;
-import key_minter.model.dto.JwtFullInfo;
-import key_minter.model.dto.JwtStandardInfo;
+import key_minter.model.JwtFullInfo;
+import key_minter.model.JwtStandardInfo;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;

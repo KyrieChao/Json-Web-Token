@@ -1,4 +1,4 @@
-package key_minter.util;
+package key_minter.security;
 
 import lombok.extern.slf4j.Slf4j;
 

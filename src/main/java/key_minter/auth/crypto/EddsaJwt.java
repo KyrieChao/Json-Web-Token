@@ -16,10 +16,11 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.MacAlgorithm;
 import key_minter.auth.core.AbstractJwt;
 import key_minter.auth.core.Jwt;
-import key_minter.model.dto.Algorithm;
-import key_minter.model.dto.JwtProperties;
-import key_minter.model.dto.KeyVersion;
-import key_minter.util.AtomicKeyRotation;
+import key_minter.config.SecretDirProvider;
+import key_minter.model.Algorithm;
+import key_minter.model.JwtProperties;
+import key_minter.model.KeyVersion;
+import key_minter.security.AtomicKeyRotation;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.bouncycastle.crypto.AsymmetricCipherKeyPair;
@@ -44,7 +45,9 @@ import java.util.stream.Stream;
 
 @Slf4j
 public class EddsaJwt extends AbstractJwt {
-    private static final Path DEFAULT_KEY_DIR = Paths.get(System.getProperty("user.home"), ".chao", "eddsa-keys");
+    private static Path getDefaultEdDir() {
+        return SecretDirProvider.getDefaultBaseDir().resolve("eddsa-keys");
+    }
     private final Map<String, OctetKeyPair> versionKeyPairs = new ConcurrentHashMap<>();
     private final Map<String, Algorithm> keyIdToAlgorithm = new ConcurrentHashMap<>();
     private static final String KEY_VERSION_PREFIX = "ed";
@@ -70,7 +73,7 @@ public class EddsaJwt extends AbstractJwt {
     }
 
     public EddsaJwt() {
-        this(DEFAULT_KEY_DIR);
+        this(getDefaultEdDir());
     }
 
     public EddsaJwt(Path keyDir) {
@@ -79,7 +82,7 @@ public class EddsaJwt extends AbstractJwt {
 
     public EddsaJwt(Path keyDir, boolean enableRotation) {
         if (keyDir == null) {
-            keyDir = DEFAULT_KEY_DIR;
+            keyDir = getDefaultEdDir();
         } else {
             // 规范化路径，防止../../../攻击
             keyDir = keyDir.normalize();
@@ -97,7 +100,7 @@ public class EddsaJwt extends AbstractJwt {
     }
 
     public EddsaJwt(String directory) {
-        this(StringUtils.isBlank(directory) ? DEFAULT_KEY_DIR : Paths.get(directory), true);
+        this(StringUtils.isBlank(directory) ? getDefaultEdDir() : Paths.get(directory), true);
     }
 
     @Override

@@ -7,9 +7,9 @@ import com.chao.key_minter_Test.model.UserInfo;
 import com.chao.key_minter_Test.response.ApiResponse;
 import com.chao.key_minter_Test.service.TokenService;
 import jakarta.annotation.Resource;
-import key_minter.model.dto.Algorithm;
-import key_minter.model.dto.JwtProperties;
-import key_minter.model.dto.JwtStandardInfo;
+import key_minter.model.Algorithm;
+import key_minter.model.JwtProperties;
+import key_minter.model.JwtStandardInfo;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;

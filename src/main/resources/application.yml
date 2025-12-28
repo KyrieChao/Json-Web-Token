@@ -2,10 +2,11 @@ spring:
   application:
     name: KeyMinter
 key-minter:
-  algorithm: HMAC256           # ????
-  key-dir: ${user.home}/.chao  # ??????
-  enable-rotation: true        # ????
-  preferred-key-id: ""         # ????ID
-  force-load: false           # ????
-  export-enabled: false       # ????
-  metrics-enabled: true       # ????
+  algorithm: HMAC256
+#  key-dir: ${user.home}/demo
+  key-dir: D:/Lan/tmp
+  enable-rotation: true
+  preferred-key-id: ""
+  force-load: false
+  export-enabled: false
+  metrics-enabled: true
