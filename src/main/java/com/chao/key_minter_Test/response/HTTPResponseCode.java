@@ -116,7 +116,6 @@ public enum HTTPResponseCode {
     USER_ACCOUNT_DISABLED(70002, "User Account Disabled", "用户账户已禁用"),
     USER_ACCOUNT_LOCKED(70003, "User Account Locked", "用户账户已锁定"),
     USER_CREDENTIALS_EXPIRED(70004, "User Credentials Expired", "用户凭证已过期"),
-
     // 系统状态相关 8xxxx
     SYSTEM_BUSY(80000, "System Busy", "系统繁忙，请稍后再试"),
     SYSTEM_MAINTENANCE(80001, "System Maintenance", "系统维护中"),
@@ -127,25 +126,12 @@ public enum HTTPResponseCode {
     DATA_FORMAT_ERROR(90001, "Data Format Error", "数据格式错误"),
     DATA_INTEGRITY_ERROR(90002, "Data Integrity Error", "数据完整性错误");
 
-    /**
-     * 状态码
-     */
     private final int code;
-
-    /**
-     * 状态码信息
-     */
     private final String message;
-
-    /**
-     * 状态码描述（详情）
-     */
     private final String description;
-
     HTTPResponseCode(int code, String message, String description) {
         this.code = code;
         this.message = message;
         this.description = description;
     }
-
 }

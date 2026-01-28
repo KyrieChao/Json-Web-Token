@@ -1,60 +1,48 @@
 package com.chao.key_minter_Test.service;
 
-import jakarta.annotation.Resource;
-import key_minter.auth.core.Jwt;
-import key_minter.auth.decoder.JwtDecoder;
-import key_minter.model.Algorithm;
-import key_minter.model.JwtProperties;
-import key_minter.model.JwtStandardInfo;
-import key_minter.util.KeyMinter;
+import com.chao.key_minter_Test.model.dto.SessionInfo;
+import com.chao.key_minter_Test.model.vo.UserVO;
+import keyMinter.api.KeyMinter;
+import keyMinter.model.JwtProperties;
+import keyMinter.model.JwtStandardInfo;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.util.UUID;
+
+@Slf4j
 @Service
+@RequiredArgsConstructor
 public class TokenService {
-    @Resource
-    private KeyMinter key;
 
-    public boolean createKey(Algorithm algorithm) {
-        Jwt load = key.autoLoad(algorithm);
-        return load.generateKeyPair(algorithm);
+    private final KeyMinter key;
+    private final RedisTemplate<String, Object> redisTemplate;
+
+    public String generateCustomToken(UserVO vo) {
+        String sessionId = UUID.randomUUID().toString();
+        Instant now = Instant.now();
+        Duration ttl = Duration.ofMinutes(30);
+        SessionInfo info = SessionInfo.builder()
+                .id(sessionId)
+                .key(vo)
+                .expires(now.plus(ttl))
+                .build();
+        redisTemplate.opsForValue().set("session:" + sessionId, info, ttl);
+        JwtProperties properties = JwtProperties.builder()
+                .subject(sessionId)
+                .issuer("chao")
+                .expiration(now.plus(ttl)).build();
+        return key.generateToken(properties);
     }
 
-    public <T> String generateToken(Algorithm algorithm, String keyId, JwtProperties properties, T t, Class<T> clazz) {
-        Jwt load = key.autoLoad(algorithm, (String) null, keyId);
-        return load.generateToken(properties, algorithm, t, clazz);
-    }
-
-    public boolean verify(Algorithm algorithm,String token) {
-        key.switchTo(algorithm);
-        return key.isValidToken(token);
-    }
-
-    public <T> T decodeCustomInfo(Algorithm algorithm, String token, Class<T> clazz) {
-        Jwt load = key.autoLoad(algorithm);
-        return JwtDecoder.decodeCustomClaimsSafe(token, load, clazz);
-    }
-
-    public JwtStandardInfo decodeStandardInfo(Algorithm algorithm, String token) {
-        Jwt load = key.autoLoad(algorithm);
-        return JwtDecoder.decodeStandardInfo(token, load);
-    }
-
-    public boolean isDecodable(Algorithm algorithm, String token) {
-        Jwt load = key.autoLoad(algorithm);
-        return JwtDecoder.isTokenDecodable(token, load);
-    }
-
-    public String getKeyInfo(Algorithm algorithm, String keyId) {
-        Jwt load = key.autoLoad(algorithm, (String) null, keyId);
-        return load.getKeyInfo();
-    }
-
-    public String getKeyVersions(Algorithm algorithm, String keyId) {
-        Jwt load = key.autoLoad(algorithm, (String) null, keyId);
-        return load.getKeyVersions().toString();
-    }
-
-    public int getSize() {
-        return key.getCacheSize();
+    public SessionInfo decodeCustomToken(String token) {
+        JwtStandardInfo decoded = key.getStandardInfo(token);
+        Object o = redisTemplate.opsForValue().get("session:" + decoded.getSubject());
+        if (o == null) return null;
+        return (SessionInfo) o;
     }
 }
