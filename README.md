@@ -186,6 +186,17 @@ mvn clean test
 2.  **明确权限策略**: `setRestrictiveFilePermissions` 方法目前为空实现，建议移除或重新实现以明确文件权限管理职责。
 3.  **细化状态控制**: `KeyStatus.TRANSITIONING` 状态目前允许签名，建议根据业务需求评估是否应限制为只读（仅验签）。
 
+## 🤝 贡献指南
+
+欢迎贡献代码！请阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 了解如何提交 Pull Request 和报告问题。
+
+## 📅 更新日志
+
+查看 [CHANGELOG.md](CHANGELOG.md) 了解版本更新详情。
+
 ## 📝 License
 
-MIT License
+Apache License 2.0
+---
+
+**Author:** [KyrieChao](https://github.com/KyrieChao)
