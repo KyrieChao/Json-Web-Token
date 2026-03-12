@@ -136,4 +136,83 @@ class RsaJwtTest {
         assertFalse(rsaJwt.verifyToken(null));
         assertFalse(rsaJwt.verifyToken(""));
     }
+    
+    @Test
+    void testLoadExistingKeys() {
+        // 1. Generate keys in one instance
+        rsaJwt.generateKeyPair(Algorithm.RSA256);
+        List<String> keys = rsaJwt.getKeyVersions(Algorithm.RSA256);
+        String keyId = keys.get(0);
+        rsaJwt.setActiveKey(keyId);
+        
+        rsaJwt.close();
+        
+        // 2. Create new instance
+        RsaJwt newInstance = new RsaJwt(properties, tempDir);
+        newInstance.loadExistingKeyVersions();
+        
+        // 3. Verify
+        assertEquals(keyId, newInstance.getActiveKeyId());
+        assertTrue(newInstance.keyPairExists(Algorithm.RSA256));
+        
+        // 4. Verify token generation works
+        JwtProperties jwtProps = new JwtProperties();
+        jwtProps.setSubject("reload-rsa");
+        jwtProps.setIssuer("rsa-issuer");
+        jwtProps.setExpiration(Instant.now().plus(Duration.ofMinutes(10)));
+        
+        String token = newInstance.generateToken(jwtProps, null, Algorithm.RSA256);
+        assertTrue(newInstance.verifyToken(token));
+        newInstance.close();
+    }
+    
+    @Test
+    void testCorruptedKeyFile() throws Exception {
+        // 1. Generate key
+        rsaJwt.generateKeyPair(Algorithm.RSA256);
+        List<String> keys = rsaJwt.getKeyVersions(Algorithm.RSA256);
+        String keyId = keys.get(0);
+        rsaJwt.setActiveKey(keyId);
+        
+        rsaJwt.close();
+        
+        // 2. Corrupt the private key file
+        Path keyDir = tempDir.resolve("rsa-keys").resolve(keyId);
+        Files.writeString(keyDir.resolve("private.key"), "corrupted-content");
+        
+        // 3. Reload
+        RsaJwt newInstance = new RsaJwt(properties, tempDir);
+        newInstance.loadExistingKeyVersions();
+        
+        // 4. Verify loaded but potentially broken on usage
+        // Since the only key is corrupted, it should not be loaded/activated
+        assertNull(newInstance.getActiveKeyId());
+        
+        // But signing should fail
+        JwtProperties jwtProps = new JwtProperties();
+        jwtProps.setSubject("fail");
+        jwtProps.setIssuer("iss");
+        jwtProps.setExpiration(Instant.now().plusSeconds(60));
+        
+        assertThrows(IllegalStateException.class, () -> newInstance.generateToken(jwtProps, null, Algorithm.RSA256));
+        newInstance.close();
+    }
+    
+    @Test
+    void testVerifyWithKeyVersion() {
+        rsaJwt.generateKeyPair(Algorithm.RSA256);
+        List<String> keys = rsaJwt.getKeyVersions(Algorithm.RSA256);
+        String key1 = keys.get(0);
+        rsaJwt.setActiveKey(key1);
+        
+        JwtProperties jwtProps = new JwtProperties();
+        jwtProps.setSubject("user");
+        jwtProps.setIssuer("iss");
+        jwtProps.setExpiration(Instant.now().plusSeconds(60));
+        
+        String token = rsaJwt.generateToken(jwtProps, null, Algorithm.RSA256);
+        
+        assertTrue(rsaJwt.verifyWithKeyVersion(key1, token));
+        assertFalse(rsaJwt.verifyWithKeyVersion("non-existent", token));
+    }
 }

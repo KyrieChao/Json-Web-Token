@@ -1,7 +1,9 @@
 # KeyMinter
-
-![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
-![License](https://img.shields.io/badge/license-MIT-blue)
+[![Java CI with Maven](https://github.com/KyrieChao/Json-Web-Token/actions/workflows/ci.yml/badge.svg)](https://github.com/KyrieChao/Json-Web-Token/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/KyrieChao/Json-Web-Token/branch/main/graph/badge.svg)](https://codecov.io/gh/KyrieChao/Json-Web-Token)
+[![Java 17+](https://img.shields.io/badge/Java-17+-orange.svg)](https://www.oracle.com/java/technologies/downloads/)
+[![Spring Boot 3](https://img.shields.io/badge/Spring%20Boot-3.x-brightgreen.svg)](https://spring.io/projects/spring-boot)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 ![Version](https://img.shields.io/badge/version-0.0.1--SNAPSHOT-orange)
 
 KeyMinter 是一个功能强大的 Spring Boot Starter，专注于简化 JWT (JSON Web Token) 的密钥管理、自动轮换与全生命周期维护。它支持多种加密算法，提供开箱即用的密钥生成、存储、轮换及平滑过渡功能，特别适合构建安全、高可用的认证系统。
@@ -155,13 +157,34 @@ key-minter:
 - **LockProvider**: 分布式锁接口，支持本地锁和 Redis 锁。
 - **KeyRepository**: 密钥存储接口，支持文件系统等多种后端。
 
-## 🧪 测试
+## 🧪 测试与覆盖率
 
-本项目包含完善的单元测试和集成测试。运行测试：
+本项目采用 JUnit 5 进行单元测试，使用 Jacoco 统计代码覆盖率。
+
+### 运行测试
 
 ```bash
 mvn clean test
 ```
+
+### 查看覆盖率报告
+
+测试运行完成后，覆盖率报告将生成在 `target/site/jacoco/index.html`。
+可以直接在浏览器中打开该文件查看详细的覆盖率数据。
+
+目前核心模块覆盖率已大幅提升，关键组件（KeyMinter, KeyMinterProperties）覆盖率较高。
+
+### 最佳实践与设计模式
+
+- **策略模式 (Strategy Pattern)**: `JwtAlgo` 接口及其实现类 (`HmacJwt`, `RsaJwt` 等) 采用了策略模式，允许在运行时动态切换加密算法。
+- **工厂模式 (Factory Pattern)**: `JwtFactory` 负责创建和管理 `JwtAlgo` 实例，确保单例复用及按需加载。
+- **状态模式 (State Pattern)**: `KeyStatus` 枚举管理密钥生命周期状态，控制密钥的可用性。
+
+### 潜在改进建议
+
+1.  **解耦构造函数依赖**: 目前 `HmacJwt` 等实现类在构造函数中初始化 `FileSystemKeyRepository`，建议改为依赖注入或通过 Builder 模式传入，以提高可测试性。
+2.  **明确权限策略**: `setRestrictiveFilePermissions` 方法目前为空实现，建议移除或重新实现以明确文件权限管理职责。
+3.  **细化状态控制**: `KeyStatus.TRANSITIONING` 状态目前允许签名，建议根据业务需求评估是否应限制为只读（仅验签）。
 
 ## 📝 License
 
