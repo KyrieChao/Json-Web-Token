@@ -8,6 +8,7 @@ import java.time.LocalDateTime;
 import static org.junit.jupiter.api.Assertions.*;
 
 class KeyVersionTest {
+    LocalDateTime fixed = LocalDateTime.of(2026, 3, 13, 21, 38, 0);
 
     @Test
     void canVerify() {
@@ -42,23 +43,26 @@ class KeyVersionTest {
 
     @Test
     void isExpired() {
+        // 未设置过期时间 = 永不过期
         KeyVersion kv = new KeyVersion();
         kv.setExpiresAt(null);
         assertFalse(kv.isExpired());
 
+        // 未来10秒 = 未过期
+        Instant now = Instant.now();
+
         KeyVersion kv2 = new KeyVersion();
-        kv2.setExpiresAt(Instant.now().plusMillis(10_000));
+        kv2.setExpiresAt(now.plusSeconds(3600)); // 1小时后过期
         assertFalse(kv2.isExpired());
 
         KeyVersion kv3 = new KeyVersion();
-        kv3.setExpiresAt(Instant.now().minusMillis(10_000));
+        kv3.setExpiresAt(now.minusSeconds(3600)); // 1小时前过期
         assertTrue(kv3.isExpired());
 
-        // 刚好到过期时间的临界点（可选，看精度需求）
+        // 刚好现在 = 未过期（isAfter是严格大于）
         KeyVersion kv4 = new KeyVersion();
         kv4.setExpiresAt(Instant.now());
-        // 取决于实现：isAfter是严格大于，所以相等时返回false（未过期）
-        assertFalse(kv4.isExpired());  // now.isAfter(now) == false
+        assertFalse(kv4.isExpired());
     }
 
     @Test
@@ -79,15 +83,16 @@ class KeyVersionTest {
     @Test
     void setExpiresAt() {
         KeyVersion kv = new KeyVersion();
-        kv.setExpiresAt(Instant.now());
-        assertEquals(Instant.now(), kv.getExpiresAt());
+        Instant fixedExpire = Instant.parse("2026-03-13T13:33:46.304387619Z");
+        kv.setExpiresAt(fixedExpire);
+        assertEquals(fixedExpire, kv.getExpiresAt());
     }
 
     @Test
     void createdTime() {
         KeyVersion kv = new KeyVersion();
-        kv.setCreatedTime(LocalDateTime.now());
-        assertEquals(LocalDateTime.now(), kv.getCreatedTime());
+        kv.setCreatedTime(fixed);
+        assertEquals(fixed, kv.getCreatedTime());
     }
 
 }
