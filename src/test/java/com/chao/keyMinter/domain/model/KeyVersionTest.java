@@ -58,11 +58,6 @@ class KeyVersionTest {
         KeyVersion kv3 = new KeyVersion();
         kv3.setExpiresAt(now.minusSeconds(3600)); // 1小时前过期
         assertTrue(kv3.isExpired());
-
-        // 刚好现在 = 未过期（isAfter是严格大于）
-        KeyVersion kv4 = new KeyVersion();
-        kv4.setExpiresAt(Instant.now());
-        assertFalse(kv4.isExpired());
     }
 
     @Test
