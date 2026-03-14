@@ -14,6 +14,7 @@ import org.mockito.Mockito;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -23,7 +24,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import com.chao.keyMinter.domain.service.JwtAlgo;
+import io.jsonwebtoken.JwtBuilder;
+import org.mockito.MockedStatic;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.stream.Stream;
+
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 class AbstractJwtAlgoTest {
 
@@ -646,6 +656,560 @@ class AbstractJwtAlgoTest {
         assertTrue(true);
     }
 
+    @Test
+    void testGenerateToken_2Args() {
+        JwtProperties props = new JwtProperties();
+        props.setSubject("sub");
+        props.setIssuer("iss");
+        props.setExpiration(Instant.now().plusSeconds(3600));
+        
+        // Ensure active key so validation passes
+        KeyVersion kv = KeyVersion.builder()
+                .keyId("k1")
+                .algorithm(Algorithm.HMAC256)
+                .status(KeyStatus.ACTIVE)
+                .expiresAt(Instant.now().plusSeconds(3600))
+                .keyPath("k1")
+                .build();
+        jwtAlgo.addKeyVersion(kv);
+        jwtAlgo.setActiveKeyIdDirectly("k1");
+
+        String token = jwtAlgo.generateToken(props, Algorithm.HMAC256);
+        assertEquals("dummy-token", token);
+    }
+
+    @Test
+    void testGetKeyVersions_Algorithm_Empty() {
+        // jwtAlgo starts with empty keyVersions
+        List<String> versions = jwtAlgo.getKeyVersions(Algorithm.HMAC256);
+        assertNotNull(versions);
+        assertTrue(versions.isEmpty());
+    }
+
+    @Test
+    void testLombokGetters() {
+        assertNotNull(jwtAlgo.getRevokedFingerprints());
+        
+        assertNotNull(jwtAlgo.getActiveKeyLock());
+        assertNotNull(jwtAlgo.getReadLock());
+        assertNotNull(jwtAlgo.getWriteLock());
+        
+        // repositoryFactory is null by default in test setup unless set
+        assertNull(jwtAlgo.getRepositoryFactory());
+        
+        assertNotNull(jwtAlgo.getKeyMinterProperties());
+        
+        // activeKeyId is null initially
+        assertNull(jwtAlgo.getActiveKeyId());
+        
+        // currentKeyPath set in constructor
+        assertNotNull(jwtAlgo.getCurrentKeyPath());
+        
+        // keyRepository null initially
+        assertNull(jwtAlgo.getKeyRepository());
+        
+        // keyRotationEnabled is true in setup
+        assertTrue(jwtAlgo.isKeyRotationEnabled());
+        
+        assertNotNull(jwtAlgo.getDefaultNewExpMs());
+    }
+
+    @Test
+    void testCleanupExpiredKeys() {
+        // 1. Expired key
+        KeyVersion expired = KeyVersion.builder()
+                .keyId("expired-key")
+                .algorithm(Algorithm.HMAC256)
+                .status(KeyStatus.ACTIVE)
+                .expiresAt(Instant.now().minusSeconds(3600))
+                .build();
+        jwtAlgo.addKeyVersion(expired);
+
+        // 2. Transitioning key ended
+        KeyVersion transitioning = KeyVersion.builder()
+                .keyId("trans-key")
+                .algorithm(Algorithm.HMAC256)
+                .status(KeyStatus.TRANSITIONING)
+                .transitionEndsAt(Instant.now().minusSeconds(10))
+                .build();
+        jwtAlgo.addKeyVersion(transitioning);
+
+        // 3. Active key expired -> auto switch
+        jwtAlgo.setActiveKeyIdDirectly("expired-key");
+        KeyVersion newKey = KeyVersion.builder()
+                .keyId("new-key")
+                .algorithm(Algorithm.HMAC256)
+                .status(KeyStatus.CREATED)
+                .expiresAt(Instant.now().plusSeconds(3600))
+                .build();
+        jwtAlgo.addKeyVersion(newKey);
+
+        // Act
+        jwtAlgo.cleanupExpiredKeys();
+
+        // Assert
+        assertEquals(KeyStatus.EXPIRED, expired.getStatus());
+        assertEquals(KeyStatus.INACTIVE, transitioning.getStatus());
+        assertEquals("new-key", jwtAlgo.getActiveKeyId());
+        assertEquals(KeyStatus.ACTIVE, newKey.getStatus());
+    }
+
+    @Test
+    void testAutoLoadKey() {
+        // 1. Existing in memory
+        KeyVersion k1 = KeyVersion.builder()
+                .keyId("k1")
+                .algorithm(Algorithm.HMAC256)
+                .status(KeyStatus.CREATED)
+                .expiresAt(Instant.now().plusSeconds(3600))
+                .build();
+        jwtAlgo.addKeyVersion(k1);
+        
+        jwtAlgo.autoLoadFirstKey(Algorithm.HMAC256, "k1", false);
+        assertEquals("k1", jwtAlgo.getActiveKeyId());
+        
+        // 2. Not in memory (should try disk, fail gracefully)
+        jwtAlgo.setActiveKeyIdDirectly(null);
+        jwtAlgo.autoLoadFirstKey(Algorithm.HMAC256, "missing", false);
+        assertNull(jwtAlgo.getActiveKeyId());
+    }
+
+    @Test
+    void testListAllKeys_And_DirectoryDetection() throws Exception {
+        // Setup directory structure
+        Path typeDir = tempDir.resolve("hmac-keys");
+        Files.createDirectories(typeDir);
+        jwtAlgo.setCurrentKeyPath(typeDir); // Point directly to type dir as per implementation?
+        // AbstractJwtAlgo.listAllKeys() logic:
+        // if currentKeyPath != null: parent = currentKeyPath.getParent(); listAllKeys(parent)
+        // If currentKeyPath is ".../hmac-keys", parent is "...".
+        // listAllKeys(parent) iterates subdirs of parent. One of them is "hmac-keys".
+        // Inside "hmac-keys", it iterates version dirs.
+        
+        // So if tempDir is the parent, and we set currentKeyPath to tempDir/hmac-keys.
+        
+        String verDirName = "HMAC256-v20230101-120000-12345678";
+        Path verDir = typeDir.resolve(verDirName);
+        Files.createDirectories(verDir);
+        
+        // Create metadata files
+        Files.writeString(verDir.resolve("status.info"), "CREATED");
+        Files.writeString(verDir.resolve("algorithm.info"), "HMAC256");
+        
+        // Act
+        List<KeyVersion> keys = jwtAlgo.listAllKeys();
+        
+        // Assert
+        assertFalse(keys.isEmpty());
+        KeyVersion k = keys.stream().filter(v -> v.getKeyId().equals(verDirName)).findFirst().orElse(null);
+        assertNotNull(k);
+        assertEquals(Algorithm.HMAC256, k.getAlgorithm());
+        assertEquals(KeyStatus.CREATED, k.getStatus());
+    }
+
+    @Test
+    void testAdditionalMethods() {
+        // 1. getKeyInfo
+        assertNotNull(jwtAlgo.getKeyInfo());
+        jwtAlgo.setActiveKeyIdDirectly("k1");
+        assertNotNull(jwtAlgo.getKeyInfo());
+
+        // 2. keyPairExists
+        assertFalse(jwtAlgo.keyPairExists());
+        assertFalse(jwtAlgo.keyPairExists(Algorithm.HMAC256));
+        
+        KeyVersion k1 = KeyVersion.builder()
+                .keyId("k1")
+                .algorithm(Algorithm.HMAC256)
+                .status(KeyStatus.ACTIVE)
+                .expiresAt(Instant.now().plusSeconds(3600))
+                .build();
+        jwtAlgo.addKeyVersion(k1);
+        
+        assertTrue(jwtAlgo.keyPairExists());
+        assertTrue(jwtAlgo.keyPairExists(Algorithm.HMAC256));
+        assertFalse(jwtAlgo.keyPairExists(Algorithm.RSA256));
+        assertFalse(jwtAlgo.keyPairExists(null));
+
+        // 3. withKeyDirectory
+        Path newDir = tempDir.resolve("new-keys");
+        jwtAlgo.withKeyDirectory(newDir);
+        assertEquals(newDir, jwtAlgo.getCurrentKeyPath());
+        assertNotNull(jwtAlgo.getKeyRepository());
+
+        // 4. canKeyVerify / canKeyNotVerify
+        assertFalse(jwtAlgo.callCanKeyVerify(null));
+        assertFalse(jwtAlgo.callCanKeyVerify("missing"));
+        assertTrue(jwtAlgo.callCanKeyNotVerify("missing"));
+        
+        assertTrue(jwtAlgo.callCanKeyVerify("k1"));
+        assertFalse(jwtAlgo.callCanKeyNotVerify("k1"));
+
+        // 5. Validation methods
+        assertDoesNotThrow(() -> jwtAlgo.callValidateHmacAlgorithm(Algorithm.HMAC256));
+        assertThrows(IllegalArgumentException.class, () -> jwtAlgo.callValidateHmacAlgorithm(Algorithm.RSA256));
+
+        assertDoesNotThrow(() -> jwtAlgo.callValidateRsaAlgorithm(Algorithm.RSA256));
+        assertThrows(IllegalArgumentException.class, () -> jwtAlgo.callValidateRsaAlgorithm(Algorithm.HMAC256));
+
+        assertDoesNotThrow(() -> jwtAlgo.callValidateEcdsaAlgorithm(Algorithm.ES256));
+        assertThrows(IllegalArgumentException.class, () -> jwtAlgo.callValidateEcdsaAlgorithm(Algorithm.HMAC256));
+
+        assertDoesNotThrow(() -> jwtAlgo.callValidateEddsaAlgorithm(Algorithm.Ed25519));
+        assertThrows(IllegalArgumentException.class, () -> jwtAlgo.callValidateEddsaAlgorithm(Algorithm.HMAC256));
+    }
+
+    @Test
+    void testListAllKeys_WithNonDirectoryFiles() throws Exception {
+        Path typeDir = tempDir.resolve("hmac-keys");
+        Files.createDirectories(typeDir);
+        jwtAlgo.setCurrentKeyPath(typeDir);
+        
+        Files.createFile(typeDir.resolve("ignore-me.txt"));
+        
+        Path verDir = typeDir.resolve("HMAC256-v20230101-120000-12345678");
+        Files.createDirectories(verDir);
+        Files.writeString(verDir.resolve("status.info"), "CREATED");
+        Files.writeString(verDir.resolve("algorithm.info"), "HMAC256");
+        
+        Files.createFile(verDir.resolve("ignore-file-inside.txt"));
+        
+        List<KeyVersion> keys = jwtAlgo.listAllKeys();
+        assertEquals(1, keys.size());
+    }
+
+    @Test
+    void testReadKeyStatus_Repository() throws Exception {
+        KeyRepository repo = Mockito.mock(KeyRepository.class);
+        jwtAlgo.setKeyRepository(repo);
+        
+        Mockito.when(repo.loadMetadata(anyString(), eq("status.info"))).thenReturn(Optional.of("ACTIVE"));
+        Mockito.when(repo.loadMetadata(anyString(), eq("expiration.info"))).thenReturn(Optional.of(Instant.now().plusSeconds(3600).toString()));
+        Mockito.when(repo.loadMetadata(anyString(), eq("transition.info"))).thenReturn(Optional.empty());
+        Mockito.when(repo.loadMetadata(anyString(), eq("algorithm.info"))).thenReturn(Optional.of("HMAC256"));
+
+        // Trigger loading via listAllKeys which calls createKeyVersionFromDir
+        // But createKeyVersionFromDir uses repository if set?
+        // Yes, readKeyStatus checks keyRepository.
+        
+        // We need to fake the directory iteration or just call listAllKeys with a real directory structure
+        // but verify it uses the repo for metadata.
+        
+        try {
+            Path typeDir = tempDir.resolve("hmac-keys");
+            Files.createDirectories(typeDir);
+            jwtAlgo.setCurrentKeyPath(typeDir);
+            Path verDir = typeDir.resolve("k1");
+            Files.createDirectories(verDir);
+            
+            List<KeyVersion> keys = jwtAlgo.listAllKeys();
+            assertEquals(1, keys.size());
+            assertEquals(KeyStatus.ACTIVE, keys.get(0).getStatus());
+            assertEquals(Algorithm.HMAC256, keys.get(0).getAlgorithm());
+        } catch (Exception e) {
+            fail(e);
+        }
+    }
+
+    @Test
+    void testAutoLoadKey_ExpiredInMemory() {
+        KeyVersion k1 = KeyVersion.builder()
+                .keyId("k1")
+                .algorithm(Algorithm.HMAC256)
+                .status(KeyStatus.ACTIVE)
+                .expiresAt(Instant.now().minusSeconds(3600))
+                .build();
+        jwtAlgo.addKeyVersion(k1);
+        
+        jwtAlgo.autoLoadFirstKey(Algorithm.HMAC256, "k1", false);
+        // Should NOT be active if expired
+        assertNull(jwtAlgo.getActiveKeyId());
+    }
+
+    @Test
+    void testAutoLoadKey_DiskLoad_Valid_And_Expired() throws Exception {
+        // Valid
+        Path typeDir = tempDir.resolve("hmac-keys");
+        Files.createDirectories(typeDir);
+        jwtAlgo.setCurrentKeyPath(typeDir);
+        
+        Path k1Dir = typeDir.resolve("k1");
+        Files.createDirectories(k1Dir);
+        
+        // Setup TestJwtAlgo to "load" this key when asked
+        jwtAlgo.setKeyToLoadOnDisk("k1", KeyVersion.builder()
+                .keyId("k1")
+                .algorithm(Algorithm.HMAC256)
+                .status(KeyStatus.ACTIVE)
+                .expiresAt(Instant.now().plusSeconds(3600))
+                .build());
+        
+        jwtAlgo.autoLoadFirstKey(Algorithm.HMAC256, "k1", false);
+        assertEquals("k1", jwtAlgo.getActiveKeyId());
+        
+        // Expired on disk
+        Path k2Dir = typeDir.resolve("k2");
+        Files.createDirectories(k2Dir);
+        jwtAlgo.setKeyToLoadOnDisk("k2", KeyVersion.builder()
+                .keyId("k2")
+                .algorithm(Algorithm.HMAC256)
+                .status(KeyStatus.ACTIVE)
+                .expiresAt(Instant.now().minusSeconds(3600))
+                .build());
+        
+        // Reset active
+        jwtAlgo.setActiveKeyIdDirectly(null);
+        jwtAlgo.autoLoadFirstKey(Algorithm.HMAC256, "k2", false);
+        assertNull(jwtAlgo.getActiveKeyId());
+    }
+
+    @Test
+    void testGetKeyVersionsByStatus_Null_Empty() {
+        assertTrue(jwtAlgo.getKeyVersionsByStatus(null).isEmpty());
+        assertTrue(jwtAlgo.getKeyVersionsByStatus(KeyStatus.ACTIVE).isEmpty());
+    }
+
+    @Test
+    void testCreateJwtBuilder() {
+        JwtProperties props = new JwtProperties();
+        props.setSubject("sub");
+        props.setIssuer("iss");
+        props.setExpiration(Instant.now().plusSeconds(3600));
+        
+        jwtAlgo.setActiveKeyIdDirectly("k1");
+        
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("role", "admin");
+        
+        JwtBuilder builder = jwtAlgo.callCreateJwtBuilder(props, claims);
+        assertNotNull(builder);
+        // Can't easily inspect builder content without building, but assume it worked if no exception
+    }
+
+    @Test
+    void testDeleteKeyDirectory_Fallback() throws Exception {
+        // Setup a key version and directory
+        Path keyDir = tempDir.resolve("hmac-keys").resolve("k-del");
+        Files.createDirectories(keyDir);
+        Files.writeString(keyDir.resolve("test.txt"), "data");
+        
+        KeyVersion kv = KeyVersion.builder()
+                .keyId("k-del")
+                .keyPath(keyDir.toString())
+                .build();
+        
+        // Ensure repository is null to trigger fallback
+        jwtAlgo.setKeyRepository(null);
+        
+        jwtAlgo.callDeleteKeyDirectory(kv);
+        
+        assertFalse(Files.exists(keyDir));
+    }
+
+    @Test
+    void testValidateDirectoryPath() {
+        assertThrows(NullPointerException.class, () -> jwtAlgo.callValidateDirectoryPath(null));
+        
+        // Valid
+        jwtAlgo.callValidateDirectoryPath(tempDir);
+        
+        // Relative path logic depends on implementation. 
+        // AbstractJwtAlgo checks: !normalized.equals(path).
+        // Paths.get("a/../b") is not normalized.
+        assertThrows(SecurityException.class, () -> jwtAlgo.callValidateDirectoryPath(Paths.get("a/../b")));
+        
+        // Symbolic link
+        // Need to create a symlink. 
+        try {
+            Path target = tempDir.resolve("target");
+            Files.createDirectories(target);
+            Path link = tempDir.resolve("link");
+            // Windows requires admin privilege for symlinks usually, unless developer mode enabled.
+            // If creation fails, we might skip or use assumeTrue.
+            // But we can mock Files.isSymbolicLink using mockStatic if needed.
+            // Or just trust it works on CI env.
+            // Let's try mocking Files.isSymbolicLink is hard because Files is final class, need mockito-inline.
+            // We have mockito-inline.
+        } catch (Exception e) {
+            // Ignore if symlink creation fails
+        }
+    }
+
+    @Test
+    void testDetectAlgorithmFromTypeDir_And_MetadataFiles() throws Exception {
+        Path root = tempDir.resolve("detect");
+        Files.createDirectories(root);
+        // Set currentKeyPath to a child so listAllKeys() uses root as base
+        jwtAlgo.setCurrentKeyPath(root.resolve("dummy"));
+        
+        // 1. hmac-keys
+        Path hmacDir = root.resolve("hmac-keys");
+        Files.createDirectories(hmacDir);
+        Path v1 = hmacDir.resolve("v1");
+        Files.createDirectories(v1);
+        
+        // 2. rsa-keys
+        Path rsaDir = root.resolve("rsa-keys");
+        Files.createDirectories(rsaDir);
+        Path v2 = rsaDir.resolve("v2");
+        Files.createDirectories(v2);
+        
+        // 3. ec-keys
+        Path ecDir = root.resolve("ec-keys");
+        Files.createDirectories(ecDir);
+        Path v3 = ecDir.resolve("v3");
+        Files.createDirectories(v3);
+        
+        // 4. eddsa-keys
+        Path eddsaDir = root.resolve("eddsa-keys");
+        Files.createDirectories(eddsaDir);
+        Path v4 = eddsaDir.resolve("v4");
+        Files.createDirectories(v4);
+        
+        // 5. unknown-keys
+        Path unknownDir = root.resolve("unknown-keys");
+        Files.createDirectories(unknownDir);
+        Path v5 = unknownDir.resolve("v5");
+        Files.createDirectories(v5);
+        
+        // Add metadata files to v1 to test readKeyExpiration and readTransitionEndTime
+        Files.writeString(v1.resolve("expiration.info"), Instant.now().plusSeconds(1000).toString());
+        Files.writeString(v1.resolve("transition.info"), Instant.now().plusSeconds(2000).toString());
+        
+        List<KeyVersion> keys = jwtAlgo.listAllKeys();
+        assertEquals(5, keys.size());
+        
+        KeyVersion k1 = keys.stream().filter(k -> k.getKeyId().equals("v1")).findFirst().orElseThrow();
+        assertEquals(Algorithm.HMAC256, k1.getAlgorithm());
+        assertNotNull(k1.getExpiresAt());
+        assertNotNull(k1.getTransitionEndsAt());
+        
+        KeyVersion k2 = keys.stream().filter(k -> k.getKeyId().equals("v2")).findFirst().orElseThrow();
+        assertEquals(Algorithm.RSA256, k2.getAlgorithm());
+        
+        KeyVersion k3 = keys.stream().filter(k -> k.getKeyId().equals("v3")).findFirst().orElseThrow();
+        assertEquals(Algorithm.ES256, k3.getAlgorithm());
+        
+        KeyVersion k4 = keys.stream().filter(k -> k.getKeyId().equals("v4")).findFirst().orElseThrow();
+        assertEquals(Algorithm.Ed25519, k4.getAlgorithm());
+        
+        KeyVersion k5 = keys.stream().filter(k -> k.getKeyId().equals("v5")).findFirst().orElseThrow();
+        assertEquals(Algorithm.HMAC256, k5.getAlgorithm()); // Default
+    }
+
+    @Test
+    void testReadMetadata_File_Exceptions() throws Exception {
+        Path typeDir = tempDir.resolve("hmac-keys");
+        Files.createDirectories(typeDir);
+        jwtAlgo.setCurrentKeyPath(typeDir);
+        
+        Path verDir = typeDir.resolve("v1");
+        Files.createDirectories(verDir);
+        Files.createFile(verDir.resolve("status.info"));
+        Files.createFile(verDir.resolve("expiration.info"));
+        Files.createFile(verDir.resolve("transition.info"));
+        Files.createFile(verDir.resolve("algorithm.info"));
+        
+        try (MockedStatic<Files> files = mockStatic(Files.class, CALLS_REAL_METHODS)) {
+            // Mock readString to throw IOException
+            files.when(() -> Files.readString(any(Path.class), any())).thenThrow(new IOException("read error"));
+            
+            // Should not throw, just log and return defaults/nulls
+            List<KeyVersion> keys = jwtAlgo.listAllKeys();
+            assertFalse(keys.isEmpty());
+            KeyVersion k = keys.get(0);
+            assertEquals(KeyStatus.CREATED, k.getStatus()); // Default
+            assertNull(k.getExpiresAt()); // Default null
+            assertNull(k.getTransitionEndsAt()); // Default null
+            assertEquals(Algorithm.HMAC256, k.getAlgorithm()); // Default from type dir
+        }
+    }
+
+    @Test
+    void testDeleteKeyDirectory_Recursive_Exception() throws Exception {
+        Path keyDir = tempDir.resolve("hmac-keys").resolve("del-fail");
+        Files.createDirectories(keyDir);
+        Files.createFile(keyDir.resolve("file.txt"));
+        
+        KeyVersion kv = KeyVersion.builder()
+                .keyId("del-fail")
+                .keyPath(keyDir.toString())
+                .build();
+        
+        jwtAlgo.setKeyRepository(null);
+        
+        try (MockedStatic<Files> files = mockStatic(Files.class, CALLS_REAL_METHODS)) {
+            // Mock walk to throw IOException
+            files.when(() -> Files.walk(any(Path.class))).thenThrow(new IOException("walk error"));
+            
+            // Should throw IOException
+            assertThrows(IOException.class, () -> jwtAlgo.callDeleteKeyDirectory(kv));
+        }
+    }
+
+    @Test
+    void testAutoLoadKey_Disk_Exception() throws Exception {
+        Path typeDir = tempDir.resolve("hmac-keys");
+        Files.createDirectories(typeDir);
+        jwtAlgo.setCurrentKeyPath(typeDir);
+        
+        Path k1 = typeDir.resolve("k1");
+        Files.createDirectories(k1);
+        
+        try (MockedStatic<Files> files = mockStatic(Files.class, CALLS_REAL_METHODS)) {
+            // Mock exists(candidate) to throw
+            // candidate = currentKeyPath.resolve(preferredKeyId)
+            // But we need to be careful not to break other checks.
+            // AbstractJwtAlgo.autoLoadKey:
+            // Path candidate = currentKeyPath.resolve(preferredKeyId);
+            // if (Files.exists(candidate) && Files.isDirectory(candidate))
+            
+            files.when(() -> Files.exists(eq(k1))).thenThrow(new RuntimeException("disk error"));
+            
+            // Should return this (fail gracefully)
+            JwtAlgo res = jwtAlgo.autoLoadFirstKey(Algorithm.HMAC256, "k1", false);
+            assertNotNull(res);
+            assertNull(jwtAlgo.getActiveKeyId());
+        }
+    }
+
+    @Test
+    void testListAllKeys_MalformedDirName() throws Exception {
+        Path typeDir = tempDir.resolve("hmac-keys");
+        Files.createDirectories(typeDir);
+        jwtAlgo.setCurrentKeyPath(typeDir);
+        
+        Path verDir = typeDir.resolve("bad-name");
+        Files.createDirectories(verDir);
+        
+        List<KeyVersion> keys = jwtAlgo.listAllKeys();
+        assertFalse(keys.isEmpty());
+        KeyVersion k = keys.get(0);
+        // Created time should be fallback (yesterday)
+        assertTrue(k.getCreatedTime().isBefore(LocalDateTime.now().minusHours(23)));
+    }
+
+    @Test
+    void testValidateDirectoryPath_Normalization() {
+        // Mock Files.exists to avoid actual file system checks if possible, or just use tempDir
+        // Path "tempDir/a/../b" should normalize to "tempDir/b"
+        // But AbstractJwtAlgo checks: if (!normalized.equals(path))
+        // So if we pass non-normalized path, it should throw.
+        
+        Path nonNorm = tempDir.resolve("a").resolve("..").resolve("b");
+        assertThrows(SecurityException.class, () -> jwtAlgo.callValidateDirectoryPath(nonNorm));
+    }
+
+    @Test
+    void testValidateDirectoryPath_Symlink() {
+        // Mock Files.isSymbolicLink
+        try (MockedStatic<Files> files = mockStatic(Files.class, CALLS_REAL_METHODS)) {
+            files.when(() -> Files.isSymbolicLink(any(Path.class))).thenReturn(true);
+            
+            assertThrows(SecurityException.class, () -> jwtAlgo.callValidateDirectoryPath(tempDir));
+        }
+    }
+
     // --- Helper Classes ---
 
     static class TestClaims {
@@ -659,10 +1223,15 @@ class AbstractJwtAlgoTest {
      */
     static class TestJwtAlgo extends AbstractJwtAlgo {
         private volatile boolean failLoadKeyPair;
+        private final Map<String, KeyVersion> keysOnDisk = new HashMap<>();
 
         public TestJwtAlgo(KeyMinterProperties properties, Path tempDir) {
             super(properties);
             this.currentKeyPath = tempDir;
+        }
+        
+        public void setKeyToLoadOnDisk(String keyId, KeyVersion version) {
+            keysOnDisk.put(keyId, version);
         }
 
         // Expose protected method for testing
@@ -696,6 +1265,42 @@ class AbstractJwtAlgoTest {
 
         public void callMarkKeyActive(String keyId) {
             super.markKeyActive(keyId);
+        }
+
+        public void callValidateHmacAlgorithm(Algorithm algorithm) {
+            super.validateHmacAlgorithm(algorithm);
+        }
+
+        public void callValidateRsaAlgorithm(Algorithm algorithm) {
+            super.validateRsaAlgorithm(algorithm);
+        }
+
+        public void callValidateEcdsaAlgorithm(Algorithm algorithm) {
+            super.validateEcdsaAlgorithm(algorithm);
+        }
+
+        public void callValidateEddsaAlgorithm(Algorithm algorithm) {
+            super.validateEddsaAlgorithm(algorithm);
+        }
+
+        public boolean callCanKeyVerify(String keyId) {
+            return super.canKeyVerify(keyId);
+        }
+
+        public boolean callCanKeyNotVerify(String keyId) {
+            return super.canKeyNotVerify(keyId);
+        }
+
+        public JwtBuilder callCreateJwtBuilder(JwtProperties properties, Map<String, Object> customClaims) {
+            return super.createJwtBuilder(properties, customClaims);
+        }
+
+        public void callDeleteKeyDirectory(KeyVersion version) throws java.io.IOException {
+            super.deleteKeyDirectory(version);
+        }
+
+        public void callValidateDirectoryPath(Path path) {
+            super.validateDirectoryPath(path);
         }
 
         @Override
@@ -787,7 +1392,10 @@ class AbstractJwtAlgoTest {
 
         @Override
         protected void loadKeyVersion(Path path) {
-            // No-op
+            String keyId = path.getFileName().toString();
+            if (keysOnDisk.containsKey(keyId)) {
+                this.keyVersions.put(keyId, keysOnDisk.get(keyId));
+            }
         }
 
         @Override

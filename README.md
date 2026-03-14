@@ -3,6 +3,7 @@
 [![codecov](https://codecov.io/gh/KyrieChao/KeyMinter/branch/main/graph/badge.svg)](https://codecov.io/gh/KyrieChao/KeyMinter)
 [![Java 17+](https://img.shields.io/badge/Java-17+-orange.svg)](https://www.oracle.com/java/technologies/downloads/)
 [![Spring Boot 3](https://img.shields.io/badge/Spring%20Boot-3.x-brightgreen.svg)](https://spring.io/projects/spring-boot)
+[![Release](https://jitpack.io/v/KyrieChao/KeyMinter.svg)](https://jitpack.io/#KyrieChao/KeyMinter)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 ![Version](https://img.shields.io/badge/version-0.0.1--SNAPSHOT-orange)
 

@@ -90,4 +90,39 @@ class KeyVersionTest {
         assertEquals(fixed, kv.getCreatedTime());
     }
 
+    @Test
+    void testBuilder() {
+        KeyVersion kv = KeyVersion.builder()
+                .keyId("kid")
+                .algorithm(Algorithm.RSA256)
+                .keyPath("/path")
+                .status(KeyStatus.ACTIVE)
+                .createdTime(LocalDateTime.now())
+                .build();
+
+        assertEquals("kid", kv.getKeyId());
+        assertEquals(KeyStatus.ACTIVE, kv.getStatus());
+    }
+
+    @Test
+    void testNoArgsConstructor() {
+        KeyVersion kv = new KeyVersion();
+        assertNull(kv.getKeyId());
+        assertEquals(KeyStatus.CREATED, kv.getStatus()); // @Builder.Default
+    }
+
+    @Test
+    void testAllArgsConstructor() {
+        LocalDateTime now = LocalDateTime.now();
+        Instant instant = Instant.now();
+
+        KeyVersion kv = new KeyVersion(
+                "kid", Algorithm.RSA256, KeyStatus.ACTIVE, "/path",
+                now, now, instant, instant, now
+        );
+
+        assertEquals("kid", kv.getKeyId());
+        assertEquals(KeyStatus.ACTIVE, kv.getStatus());
+    }
+
 }

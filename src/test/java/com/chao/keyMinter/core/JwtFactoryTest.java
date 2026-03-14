@@ -138,12 +138,98 @@ class JwtFactoryTest {
     }
     
     @Test
-    void testClearCache() {
-        jwtFactory.get(Algorithm.HMAC256);
-        assertEquals(1, jwtFactory.getCacheSize());
+    void testAutoLoadOverloads() {
+        // 1. autoLoad(Algorithm)
+        assertNotNull(jwtFactory.autoLoad(Algorithm.HMAC256));
+
+        // 2. autoLoad(Algorithm, boolean)
+        assertNotNull(jwtFactory.autoLoad(Algorithm.HMAC256, true));
+
+        // 3. autoLoad(Algorithm, String)
+        assertNotNull(jwtFactory.autoLoad(Algorithm.HMAC256, tempDir.toString()));
+        assertNotNull(jwtFactory.autoLoad(Algorithm.HMAC256, (String) null));
+
+        // 4. autoLoad(Algorithm, String, String)
+        assertNotNull(jwtFactory.autoLoad(Algorithm.HMAC256, tempDir.toString(), "k1"));
+        assertNotNull(jwtFactory.autoLoad(Algorithm.HMAC256, (String) null, "k1"));
+
+        // 5. autoLoad(Algorithm, String, String, boolean)
+        assertNotNull(jwtFactory.autoLoad(Algorithm.HMAC256, tempDir.toString(), "k1", true));
+        assertNotNull(jwtFactory.autoLoad(Algorithm.HMAC256, (String) null, "k1", true));
+    }
+
+    @Test
+    void testResolveKeyDirFallback() {
+        JwtFactory factory = new JwtFactory();
+        // Case 1: Properties is null
+        factory.setProperties(null);
+        // Should resolve to default base dir and print to System.out (not checking output here, just coverage)
+        assertNotNull(factory.get(Algorithm.HMAC256, (Path) null));
+
+        // Case 2: Properties keyDir is null
+        KeyMinterProperties props = mock(KeyMinterProperties.class);
+        when(props.getKeyDir()).thenReturn(null);
+        factory.setProperties(props);
+        assertNotNull(factory.get(Algorithm.HMAC256, (Path) null));
+
+        // Case 3: Properties keyDir is empty
+        when(props.getKeyDir()).thenReturn("");
+        assertNotNull(factory.get(Algorithm.HMAC256, (Path) null));
+    }
+
+    @Test
+    void testEvictionWithException() throws Exception {
+        // Setup a factory with size 1
+        JwtFactory factory = new JwtFactory();
+        KeyMinterProperties props = mock(KeyMinterProperties.class);
+        when(props.getMaxAlgoInstance()).thenReturn(1);
+        factory.setProperties(props);
+
+        // Inject a mock Algo that throws on close
+        JwtAlgo mockAlgo = mock(JwtAlgo.class);
+        doThrow(new RuntimeException("close error")).when(mockAlgo).close();
+
+        // Use reflection to insert into cache (since get() creates real ones)
+        // Or we can just spy on the factory? No, build() is private.
+        // We can use reflection to access the cache map.
+        java.lang.reflect.Field cacheField = JwtFactory.class.getDeclaredField("cache");
+        cacheField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, JwtAlgo> cache = (java.util.Map<String, JwtAlgo>) cacheField.get(factory);
+
+        // Put mock algo
+        cache.put("MOCK:KEY", mockAlgo);
+
+        // Trigger eviction by adding another
+        factory.get(Algorithm.HMAC256, tempDir.resolve("new"));
+
+        // Verify close was called (exception swallowed logged)
+        verify(mockAlgo).close();
+        assertEquals(1, factory.getCacheSize());
+    }
+
+    @Test
+    void testClearCacheWithException() throws Exception {
+        // Setup a factory
+        JwtFactory factory = new JwtFactory();
         
-        jwtFactory.clearCache();
-        assertEquals(0, jwtFactory.getCacheSize());
+        // Inject a mock Algo that throws on close
+        JwtAlgo mockAlgo = mock(JwtAlgo.class);
+        doThrow(new RuntimeException("close error")).when(mockAlgo).close();
+
+        java.lang.reflect.Field cacheField = JwtFactory.class.getDeclaredField("cache");
+        cacheField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, JwtAlgo> cache = (java.util.Map<String, JwtAlgo>) cacheField.get(factory);
+
+        cache.put("MOCK:KEY", mockAlgo);
+
+        // Clear cache
+        factory.clearCache();
+
+        // Verify close was called
+        verify(mockAlgo).close();
+        assertEquals(0, factory.getCacheSize());
     }
 }
 
