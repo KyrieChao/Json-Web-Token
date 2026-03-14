@@ -1,5 +1,6 @@
 package com.chao.keyMinter.domain.model;
 
+import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -7,6 +8,7 @@ import java.time.LocalDateTime;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@Slf4j
 class KeyVersionTest {
     LocalDateTime fixed = LocalDateTime.of(2026, 3, 13, 21, 38, 0);
 
@@ -115,10 +117,15 @@ class KeyVersionTest {
     void testAllArgsConstructor() {
         LocalDateTime now = LocalDateTime.now();
         Instant instant = Instant.now();
+        Instant future = instant.plusSeconds(3600);
 
         KeyVersion kv = new KeyVersion(
                 "kid", Algorithm.RSA256, KeyStatus.ACTIVE, "/path",
-                now, now, instant, instant, now
+                now,      // createdTime
+                now,      // activatedTime
+                future,   // expiresAt ✅ 用 future，确保在未来
+                future.plusSeconds(3600), // transitionEndsAt
+                now       // deactivatedTime
         );
 
         assertEquals("kid", kv.getKeyId());
